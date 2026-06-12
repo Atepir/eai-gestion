@@ -1,0 +1,233 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+    ADMIN
+    OWNER
+}
+
+enum PropertyType {
+    APARTMENT
+    HOUSE
+    COMMERCIAL
+    LAND
+}
+
+enum PropertyStatus {
+    OCCUPIED
+    VACANT
+}
+
+enum ContractStatus {
+    ACTIVE
+    NOTICE
+    EXPIRED
+    TERMINATED
+}
+
+enum InvoiceStatus {
+    UNPAID
+    PAID
+}
+
+enum PaymentMethod {
+    CASH
+    CHECK
+    TRANSFER
+    MOBILE_MONEY
+}
+
+enum MeterType {
+    WATER
+    ELECTRICITY
+}
+
+enum MeterStatus {
+    PENDING
+    READ
+    TERMINATED
+}
+
+enum TerminationStatus {
+    IN_PROGRESS
+    COMPLETED
+}
+
+model User {
+    id           String   @id @default(uuid()) @db.Uuid
+    email        String   @unique
+    passwordHash String   @map("password_hash")
+    role         UserRole @default(OWNER)
+    createdAt    DateTime @default(now()) @map("created_at")
+
+    owner Owner?
+
+    @@map("users")
+}
+
+model Owner {
+    id        String   @id @default(uuid()) @db.Uuid
+    userId    String   @unique @map("user_id") @db.Uuid
+    name      String
+    email     String
+    phone     String?
+    address   String?
+    createdAt DateTime @default(now()) @map("created_at")
+
+    user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+    properties Property[]
+    tenants    Tenant[]
+    contracts  Contract[]
+    invoices   Invoice[]
+
+    @@map("owners")
+}
+
+model Property {
+    id            String         @id @default(uuid()) @db.Uuid
+    ownerId       String         @map("owner_id") @db.Uuid
+    designation   String
+    addressStreet String         @map("address_street")
+    addressCity   String         @map("address_city")
+    addressZip    String         @map("address_zip")
+    type          PropertyType
+    status        PropertyStatus @default(VACANT)
+    createdAt     DateTime       @default(now()) @map("created_at")
+
+    owner     Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    contracts Contract[]
+    meters    Meter[]
+
+    @@index([ownerId])
+    @@map("properties")
+}
+
+model Tenant {
+    id               String   @id @default(uuid()) @db.Uuid
+    ownerId          String   @map("owner_id") @db.Uuid
+    firstName        String   @map("first_name")
+    lastName         String   @map("last_name")
+    idDocumentType   String   @map("id_document_type")
+    idDocumentNumber String   @map("id_document_number")
+    phone            String?
+    email            String?
+    profession       String?
+    createdAt        DateTime @default(now()) @map("created_at")
+
+    owner     Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    contracts Contract[]
+
+    @@index([ownerId])
+    @@map("tenants")
+}
+
+model Contract {
+    id          String         @id @default(uuid()) @db.Uuid
+    ownerId     String         @map("owner_id") @db.Uuid
+    propertyId  String         @map("property_id") @db.Uuid
+    tenantId    String         @map("tenant_id") @db.Uuid
+    monthlyRent Decimal        @map("monthly_rent") @db.Decimal(10, 2)
+    startDate   DateTime       @map("start_date") @db.Date
+    endDate     DateTime       @map("end_date") @db.Date
+    status      ContractStatus @default(ACTIVE)
+    createdAt   DateTime       @default(now()) @map("created_at")
+    updatedAt   DateTime       @updatedAt @map("updated_at")
+
+    owner        Owner         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+    tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+    invoices     Invoice[]
+    terminations Termination[]
+
+    @@index([ownerId])
+    @@index([propertyId])
+    @@index([status])
+    @@map("contracts")
+}
+
+model Invoice {
+    id          String        @id @default(uuid()) @db.Uuid
+    contractId  String        @map("contract_id") @db.Uuid
+    ownerId     String        @map("owner_id") @db.Uuid
+    periodLabel String        @map("period_label")
+    amount      Decimal       @db.Decimal(10, 2)
+    dueDate     DateTime      @map("due_date") @db.Date
+    status      InvoiceStatus @default(UNPAID)
+    createdAt   DateTime      @default(now()) @map("created_at")
+
+    contract Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+    owner    Owner     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    payments Payment[]
+
+    @@index([ownerId])
+    @@index([contractId])
+    @@index([status])
+    @@index([dueDate])
+    @@map("invoices")
+}
+
+model Payment {
+    id          String        @id @default(uuid()) @db.Uuid
+    invoiceId   String        @map("invoice_id") @db.Uuid
+    amount      Decimal       @db.Decimal(10, 2)
+    method      PaymentMethod
+    paymentDate DateTime      @map("payment_date") @db.Date
+    reference   String?
+    notes       String?
+    createdAt   DateTime      @default(now()) @map("created_at")
+
+    invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+    @@index([invoiceId])
+    @@map("payments")
+}
+
+model Meter {
+    id           String      @id @default(uuid()) @db.Uuid
+    propertyId   String      @map("property_id") @db.Uuid
+    type         MeterType
+    entryReading Decimal?    @map("entry_reading") @db.Decimal(10, 2)
+    exitReading  Decimal?    @map("exit_reading") @db.Decimal(10, 2)
+    status       MeterStatus @default(PENDING)
+    createdAt    DateTime    @default(now()) @map("created_at")
+
+    property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+    @@index([propertyId])
+    @@map("meters")
+}
+
+model Termination {
+    id              String            @id @default(uuid()) @db.Uuid
+    contractId      String            @unique @map("contract_id") @db.Uuid
+    noticeDate      DateTime          @map("notice_date") @db.Date
+    endDate         DateTime          @map("end_date") @db.Date
+    status          TerminationStatus @default(IN_PROGRESS)
+    depositRefunded Boolean           @default(false) @map("deposit_refunded")
+    depositAmount   Decimal?          @map("deposit_amount") @db.Decimal(10, 2)
+    createdAt       DateTime          @default(now()) @map("created_at")
+
+    contract  Contract                   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+    checklist TerminationChecklistItem[]
+
+    @@map("terminations")
+}
+
+model TerminationChecklistItem {
+    id            String  @id @default(uuid()) @db.Uuid
+    terminationId String  @map("termination_id") @db.Uuid
+    label         String
+    completed     Boolean @default(false)
+    orderIndex    Int     @map("order_index")
+
+    termination Termination @relation(fields: [terminationId], references: [id], onDelete: Cascade)
+
+    @@index([terminationId])
+    @@map("termination_checklist_items")
+}
